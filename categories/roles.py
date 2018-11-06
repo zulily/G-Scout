@@ -1,21 +1,18 @@
 import json
 
-from googleapiclient import discovery
-from httplib2 import Http
-from oauth2client.file import Storage
+from googleapiclient import discovery, errors
+import google.auth
 
-storage = Storage('creds.data')
-service = discovery.build('cloudresourcemanager', 'v1', credentials=storage.get())
+credentials, projectId = google.auth.default()
+
+service = discovery.build('cloudresourcemanager', 'v1', credentials=credentials)
 
 
 def insert_roles(projectId, db):
-    headers = {"Content-Length": 0}
-    resp, content = storage.get().authorize(Http()).request(
-        "https://cloudresourcemanager.googleapis.com/v1/projects/" + projectId + ":getIamPolicy", "POST",
-        headers=headers)
-    for role in json.loads(content)['bindings']:
+    try:
+        content = service.projects().getIamPolicy(body={},resource=projectId).execute()
+    except errors.HttpError as httperr:
+        print("Error fetching roles: %s", str(httperr))
+        content = None
+    for role in content['bindings']:
         db.table('Role').insert(role)
-# this does not support pagination of results
-
-# service.projects().getIamPolicy(body="",resource="gscout-test").execute()
-# gives error Root element must be a message

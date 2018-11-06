@@ -1,0 +1,29 @@
+<h1 class="well well-lg">
+  {{title}}
+</h1>
+<br>
+  <ul>
+    {% for record in records %}
+        {% set rule = record.keys()[0] %}
+        {% set fields = record[rule] %}
+      <h2 class="list-group-item-heading">{{rule}}</h2><br>
+      <div class="list-group-item" style="margin-left: 2em;">
+          <p class="list-group-item-text">
+              {% for field in fields %}
+                {% set subrecord = [fields] %}
+                {% set nested_fields = field %}
+                {% if field is iterable and field is not string %}
+                  {% for nested_field in nested_fields%}
+                    {% do subrecord.append(subrecord[-1][nested_field]) %}
+                    {% if nested_field not in subrecord[0] and nested_field == field[-1]%}
+                    <pre>{{nested_field}}: {{subrecord[-1]|pretty_print}}</pre>
+                    {% endif %}
+                  {% endfor %}
+                {% else %}
+                  <pre>{{field}}: {{fields[field]|pretty_print}}</pre>
+                {% endif  %}
+              {% endfor %}
+            </p>
+          </div>
+    {% endfor %}
+  </ul>

@@ -1,10 +1,12 @@
 import datetime
 import json
 
-from httplib2 import Http
-from oauth2client.file import Storage
+from google.auth import default
+from google.auth.transport.requests import AuthorizedSession
 
-storage = Storage('creds.data')
+credentials, projectId = default()
+scope_creds = credentials.with_scopes(['https://www.googleapis.com/auth/iam'])
+auth_session = AuthorizedSession(scope_creds)
 
 
 def insert_service_account_keys(projectId, db):
@@ -22,9 +24,8 @@ def insert_service_account_keys(projectId, db):
 
 
 def list_service_account_keys(sa, projectId):
-    resp, content = storage.get().authorize(Http()).request(
-        "https://iam.googleapis.com/v1/projects/" + projectId + "/serviceAccounts/" + sa['uniqueId'] + "/keys", "GET")
-    return json.loads(content)['keys']
+    resp = auth_session.get("https://iam.googleapis.com/v1/projects/" + projectId + "/serviceAccounts/" + sa['uniqueId'] + "/keys")
+    return resp.json()['keys']
 
 
 # Function to pass Tinydb for the update query

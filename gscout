@@ -1,0 +1,47 @@
+#!/bin/bash
+#
+
+# set Virtualenv to ${VENV} if you use it.
+VENV=~/scoutenv/bin/activate
+
+# List available projects
+dumpprojects()
+{
+    cd ./keys  && ls *.json | cut -f 1 -d "."
+}
+
+# Usage
+syntax()
+{
+    echo "SYNTAX:"
+    echo "gscout <project-name>"
+    echo ""
+    echo "where <project-name> is one of the following:"
+    dumpprojects
+    exit 1
+}
+
+if [[ ! -d ./keys ]] ; then
+    echo "Missing ./keys directory with google JSON credential files"
+    exit 1
+fi
+
+if [[ $# -lt 1 || $# -gt 1 ]] ; then
+    syntax
+else
+    PNAME=$1
+fi
+
+if [[ -n ${VENV} ]] ; then
+    source ~/scoutenv/bin/activate
+fi
+
+if [[ ! -e ./keys/${PNAME}.json ]] ; then
+    echo "Google JSON credential files for project ${PNAME} not found."
+    syntax
+fi
+
+# set Google, Slack, SMTP settings
+source ./keys/${PNAME}.config
+
+python ./gscout.py

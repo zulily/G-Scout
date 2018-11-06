@@ -1,13 +1,14 @@
 from googleapiclient import discovery
-from oauth2client.file import Storage
+import google.auth
+
 from tinydb import TinyDB
 
-storage = Storage('creds.data')
+credentials, projectId = google.auth.default()
 
 
 def insert_entity(projectId, product, categories, table_name, version="v1", prefix="", items="items"):
     db = TinyDB("project_dbs/" + projectId + ".json")
-    service = discovery.build(product, version, credentials=storage.get())
+    service = discovery.build(product, version, credentials=credentials)
     while categories:
         api_entity = getattr(service, categories.pop(0))()
         service = api_entity

@@ -1,8 +1,8 @@
-from googleapiclient import discovery
-from oauth2client.file import Storage
+from googleapiclient import discovery, errors
+import google.auth
 
-storage = Storage('creds.data')
-service = discovery.build('storage', 'v1', credentials=storage.get())
+credentials, projectId = google.auth.default()
+service = discovery.build('storage', 'v1', credentials=credentials)
 
 
 def insert_acls(db):
@@ -14,8 +14,9 @@ def insert_acls(db):
                 db.table('Bucket').update(
                     add_acl({"permission": acl['role'], "scope": acl['entity']}),
                     eids=[bucket.eid])
-        except KeyError:
-            pass
+        except errors.HttpError as err:
+            print("Error fetching bucket: %s :", bucket['name'])
+            print("%s", str(err))
 
 
 def insert_defacls(db):
@@ -27,8 +28,9 @@ def insert_defacls(db):
                 db.table('Bucket').update(
                     add_defacl({"permission": defacl['role'], "scope": defacl['entity']}),
                     eids=[bucket.eid])
-        except KeyError:
-            pass
+        except errors.HttpError as err:
+            print("Error fetching bucket ACL: %s :", bucket['name'])
+            print("%s", str(err))
 
 
 # Function to pass Tinydb for the update query

@@ -15,7 +15,7 @@ def rules(projectId):
             try:
                 db.table('Rule').insert({"title": rule_title, "category": category})
                 for entity in list(filter(filter_func, db.table(category).all())):
-                    add_finding.add_finding(db, category, entity.eid, rule_title)
+                    add_finding.add_finding(db, category, entity, rule_title)
             except KeyError:
                 pass
 
@@ -144,6 +144,11 @@ def rules(projectId):
                           and (not firewall.get('allowed')[0].get('ports')
                                or [True for rule in firewall['allowed'] if rule.get('ports')
                                    and '0-65535' in rule.get('ports')]))
+
+    Rule("Any Ports Open to Ingress from All", "Firewall",
+         lambda firewall: firewall.get("sourceRanges")
+                          and "0.0.0.0/0" in firewall['sourceRanges']
+                          and "INGRESS" in firewall['direction'])
 
     Rule("Use of Port Ranges", "Firewall",
          lambda firewall: [allow for allow in firewall['allowed']

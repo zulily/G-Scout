@@ -1,9 +1,10 @@
 from googleapiclient import discovery
-from oauth2client.file import Storage
 from tinydb import Query
+import google.auth
 
-storage = Storage('creds.data')
-service = discovery.build('compute', 'v1', credentials=storage.get())
+credentials, projectId = google.auth.default()
+
+service = discovery.build('compute', 'v1', credentials=credentials)
 instances = service.instances()
 instanceGroups = service.instanceGroups()
 instanceTemplates = service.instanceTemplates()

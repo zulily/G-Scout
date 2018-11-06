@@ -18,6 +18,17 @@ def pretty_print(dict):
 env.filters['pretty_print'] = pretty_print
 
 
+def format_html_regressions(title, regs):
+    """
+        Flatten regressions into an html message
+    """
+    payload = ''
+    template = env.get_template('regression_template.html')
+    payload = template.render(
+        **{'records': regs, 'title': title})
+    return payload
+
+
 def display_results(db, projectId):
     def add_to_dropdown(category):
         rules = set([])
@@ -38,8 +49,7 @@ def display_results(db, projectId):
             for rule_title in dropdowns[category]:
                 rule = db.table("Rule").get(Query().title == rule_title)
                 findings = db.table("Finding").search(Query().rule.id == rule.eid)
-                findings = [db.table(finding['entity']['table']).get(eid=finding['entity']['id']) for finding in
-                            findings]
+                findings = [db.table(finding['entity']['table']).get(eid=finding['entity']['id']) for finding in findings]
                 template = env.get_template("finding_template.html")
                 file = open("Report Output/" + projectId + "/" + rule_title + ".html", "w+")
                 file.write(template.render(

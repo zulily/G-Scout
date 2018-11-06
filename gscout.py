@@ -1,115 +1,125 @@
-from googleapiclient import discovery
-from oauth2client.client import ApplicationDefaultCredentialsError
-from oauth2client.client import HttpAccessTokenRefreshError
-from oauth2client.file import Storage
-from tinydb import TinyDB
+#!/usr/bin/env python
+"""
+   This script collects security-related settings from a Google project. It
+   - Archives them to a TinyDB named after the Google Project ID.
+   - Runs rules against the tables in the TinyDB to determine issues.
+   - Writes those issues as regressions back to the DB.
+   - Generates HTML pages of the current state of the issues in the project.
+   - Compares the current regressions in the DB against the previous set.
+      - New regressions are sent to the given slack channels using a red bar.
+      - Fixed regressions are sent to the given slack channels using a green bar.
+      - All regressions are sent using html mail via SMTP to the given email addresses.
+
+   gscout.py, called by "gscout" shell script in this directory.
+   Usage:
+       ./gscout <project name>
+   Copyright 2018 zulily, Inc.
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+import errno
 import os
-from core.fetch import fetch
 import logging
-import argparse
 
-# configure command line parameters
-parser = argparse.ArgumentParser(description='Google Cloud Platform Security Tool')
-group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument('--project-name', '-p-name', help='Project name to scan')
-group.add_argument('--project-id', '-p-id', help='Project id to scan')
-group.add_argument('--organization', '-o', help='Organization id to scan')
-group.add_argument('--folder-id', '-f-id', help='Folder id to scan')
-args = parser.parse_args()
+import google.auth
+from tinydb import TinyDB
 
-storage = Storage('creds.data')
+from core.fetch import fetch
+from core.rules import rules
+from core.display_results import display_results
+from core.check_regressions import check_regressions
+from core.utils import report_regressions
+
+
+CREDS, DEF_PROJ_ID = google.auth.default()
 
 logging.basicConfig(filename="log.txt")
 logging.getLogger().setLevel(logging.ERROR)
 # Silence some errors
 logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
 
-try:
-    os.remove("projects.json")
-except:
-    pass
-db = TinyDB('projects.json')
+def get_project():
+    """
+        Retained in case logic should change.
+    """
+    return DEF_PROJ_ID
 
 
-def list_projects(project_or_org, specifier):
-    service = discovery.build('cloudresourcemanager',
-                              'v1', credentials=storage.get())
-    service2 = discovery.build('cloudresourcemanager',
-                               'v2',credentials=storage.get())
-    if project_or_org == "organization":
-        child = service2.folders().list(parent='organizations/%s' % specifier)
-        child_response = child.execute()
-        request = service.projects().list(filter='parent.id:%s' % specifier)
-        if 'folders' in child_response.keys() :
-            for folder in child_response['folders'] :
-                list_projects("folder-id", folder['name'].strip(u'folders/'))
-    elif project_or_org == "project-name":
-        request = service.projects().list(filter='name:%s' % specifier)
-    elif project_or_org == "project-id":
-        request = service.projects().list(filter='id:%s' % specifier)
-    elif project_or_org=="folder-id":
-        child = service2.folders().list(parent='folders/%s' % specifier)
-        child_response = child.execute()
-        request = service.projects().list(filter='parent.id:%s' % specifier)
-        if 'folders' in child_response.keys() :
-            for folder in child_response['folders'] :
-                list_projects("folder-id", folder['name'].strip(u'folders/'))
+def init_dirs(project_id, db_string):
+    """
+        Initialize necessary directories
+    """
+    reqdirs = ["Report Output", "project_dbs", "Report Output/" + project_id]
+    for reqdir in reqdirs:
+        try:
+            os.makedirs(reqdir)
+        except OSError as err:
+            if err.errno == errno.EEXIST:
+                pass
 
-    else:
-        raise Exception('Organization or Project not specified.')
-    add_projects(request, service)
-
-def add_projects(request, service):
-    while request is not None:
-        response = request.execute()
-        if 'projects' in response.keys():
-            for project in response['projects']:
-                if (project['lifecycleState'] != "DELETE_REQUESTED"):
-                    db.table('Project').insert(project)
-
-        request = service.projects().list_next(previous_request=request,
-                                               previous_response=response)
-
-
-def fetch_all(project):
+    olddb = db_string + '.old'
     try:
-        os.makedirs("project_dbs")
-    except:
-        pass
-    try:
-        os.makedirs("Report Output/" + project['projectId'])
-    except:
-        pass
-    try:
-        fetch(project['projectId'])
-    except Exception as e:
-        print("Error fetching ", project['projectId'])
-        logging.exception(e)
+        os.unlink(olddb)
+    except OSError as err:
+        if err.errno == errno.ENOENT:
+            pass
+        else:
+            logging.exception(str(err))
+
+    if os.path.exists(db_string):
+        os.rename(db_string, olddb)
 
 
 def main():
+    """
+        Main function, driving regression discovery.
+    """
     try:
-        os.makedirs("Report Output")
-    except:
-        pass
-    try:
-        if args.project_name :
-            list_projects(project_or_org='project-name', specifier=args.project_name)
-        elif args.project_id :
-            list_projects(project_or_org='project-id', specifier=args.project_id)
-        elif args.folder_id :
-            list_projects(project_or_org='folder-id', specifier=args.folder_id)
+        project = get_project()
+        if project:
+            print 'Scouting ' + project
+            dbstr = "project_dbs/" + project + ".json"
+            init_dirs(project, dbstr)
         else:
-            list_projects(project_or_org='organization', specifier=args.organization)
-    except (HttpAccessTokenRefreshError, ApplicationDefaultCredentialsError):
-        from core import config
-        list_projects(project_or_org='project' if args.project else 'organization',
-                      specifier=args.project if args.project else args.organization)
+            print "Project ID not found"
+    except Exception as err:
+        print "Could not list project due to Google Credential errors."
+        print str(err)
+        exit(1)
 
-    for project in db.table("Project").all():
-        print("Scouting ", project['projectId'])
-        fetch_all(project)
+    curdb = TinyDB(dbstr)
+    try:
+        fetch(project, curdb)
+    except Exception as err:
+        print "Error fetching " +  project
+        logging.exception(str(err))
+
+    try:
+        print"Checking rules."
+        rules(project)
+    except Exception as err:
+        logging.exception(err)
+
+    print"Generating results web pages."
+    display_results(curdb, project)
+
+    print"Checking for regressions."
+    newregs, fixregs = check_regressions(dbstr, project)
+
+    print"Reporting regressions."
+    report_regressions(newregs, fixregs)
 
 
 if __name__ == "__main__":
     main()
+

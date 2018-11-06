@@ -1,16 +1,21 @@
 import json
+from google.auth import default
+from google.auth.transport.requests import AuthorizedSession
 
-from oauth2client.file import Storage
-
-storage = Storage('creds.data')
-from httplib2 import Http
+credentials, projectId = default()
+scope_creds = credentials.with_scopes(['https://www.googleapis.com/auth/iam'])
+auth_session = AuthorizedSession(scope_creds)
 
 
 def insert_service_accounts(projectId, db):
-    resp, content = storage.get().authorize(Http()).request(
-        "https://iam.googleapis.com/v1/projects/" + projectId + "/serviceAccounts/", "GET")
-    for account in json.loads(content)['accounts']:
-        db.table("Service Account").insert(account)
+    resp = auth_session.get("https://iam.googleapis.com/v1/projects/" + projectId + "/serviceAccounts/")
+    content = resp.json()
+    if 'error' in content:
+        print("Error calling service account api: %s",
+              content['error']['message'])
+    else:
+        for account in content['accounts']:
+            db.table("Service Account").insert(account)
 
 
 def add_role(role):
